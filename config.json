@@ -21,7 +21,7 @@
       "action": "output",
       "args": {
         "outputDir": "./output",
-        "outputName": "geoip-ru.dat",
+        "outputName": "geoip.dat",
         "wantedList": ["ru", "private"]
       }
     },
