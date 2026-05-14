@@ -10,18 +10,20 @@ on:
       - ".gitignore"
       - "LICENSE*"
       - "*.md"
+  env:
+    FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 jobs:
   build:
     name: Build
     runs-on: ubuntu-latest
     steps:
       - name: Checkout codebase
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version-file: ./go.mod
 
@@ -45,18 +47,38 @@ jobs:
           go build ./
           ./geoip convert -c ./config.json
 
-      - name: Generate sha256 checksum for dat and txt files
+      - name: Generate geoip.dat sha256 hash
         run: |
-          cd ./output || exit 1
-          for name in $(ls *.dat *.txt); do
-            sha256sum ${name} > ./${name}.sha256sum
-          done
+          sha256sum ./output/geoip.dat > ./output/geoip.dat.sha256sum
+          cat ./output/geoip.dat.sha256sum
+
+      - name: Generate new hash and check against latest release
+        id: verify_diff
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          sha256sum ./output/geoip.dat | awk '{print $1}' > ./output/current_hash.txt
+          NEW_HASH=$(cat ./output/current_hash.txt)
+          echo "New hash: $NEW_HASH"
+
+          gh release download --pattern "geoip.dat.sha256sum" --repo $GITHUB_REPOSITORY --output ./output/old_hash_file || echo "First release" > ./output/old_hash_file
+
+          OLD_HASH=$(awk '{print $1}' ./output/old_hash_file || echo "none")
+          echo "Old hash: $OLD_HASH"
+
+          if [ "$NEW_HASH" == "$OLD_HASH" ]; then
+            echo "changed=false" >> $GITHUB_OUTPUT
+            echo "Content is identical to the latest release. No update needed."
+          else
+            echo "changed=true" >> $GITHUB_OUTPUT
+            echo "Content has changed. New release will be created."
+          fi
 
       - name: Create release and upload files
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create "$TAG_NAME" output/geoip.dat output/ru.txt output/private.txt \
+          gh release create "$TAG_NAME" ./output/geoip.dat \
             --repo $GITHUB_REPOSITORY \
             --title "$RELEASE_NAME" \
             --notes "" \
